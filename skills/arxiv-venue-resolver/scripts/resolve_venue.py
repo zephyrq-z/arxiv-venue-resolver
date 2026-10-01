@@ -25,7 +25,12 @@ def find_resolver(explicit: str | None) -> str:
     env = os.environ.get("ARXIV_VENUE_RESOLVER")
     if env:
         candidates.append(env)
-    candidates.append(DEFAULT_RESOLVER)  # 仓库内运行时 3 层回溯到仓库根
+    candidates.append(DEFAULT_RESOLVER)  # 仓库内 3 层回溯到仓库根
+    # skills-manager 链路: 库副本与部署副本都无 BAKED 行, 无法相对回溯到仓库;
+    # 用 ARXIV_VENUE_RESOLVER_SKM 环境变量兜底 (值 = resolve.py 绝对路径)
+    skm = os.environ.get("ARXIV_VENUE_RESOLVER_SKM")
+    if skm:
+        candidates.append(skm)
     baked = globals().get("BAKED_REPO_PATH")  # install_skills.py 烧录的安装时仓库位置
     if baked:
         candidates.append(baked)

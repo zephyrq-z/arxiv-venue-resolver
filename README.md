@@ -31,6 +31,18 @@ This tool chains every evidence source from cheapest to most authoritative, stop
 
 S2 results are cached in `~/.cache/arxiv-venue/<id>.json`, including a `resolved:false` negative marker — once confirmed unpublished, re-checking costs zero network.
 
+## Prerequisites & companion projects
+
+Standalone by design — `resolve.py` runs with zero setup (falls back to the arXiv API + Semantic Scholar + DBLP web API). Two optional local databases make it fast and offline, and one companion project feeds the first of them:
+
+| Component | What it provides | Without it |
+|---|---|---|
+| [arXivSearcher](https://github.com/zephyrq-z) (companion, local repo) | arXiv metadata embedding shards (`data/embedding_shards_*/shard_*.meta.jsonl`); `build_local.py` reads them into `local.sqlite` | paper metadata falls back to the arXiv API (1 request per unknown ID) |
+| `local.sqlite` (optional, built) | 3.1M-paper metadata: journal_ref / DOI / category at ms-level, zero network | the zero-request tier (①) is lost |
+| `dblp.sqlite` (optional, built) | 8.4M-record authoritative publication index from the DBLP XML dump | `--dblp` falls back to the DBLP web API (may hit bot protection) |
+
+The two projects are complementary: **arXivSearcher finds which papers are relevant** (BM25 + embedding hybrid search over 3M preprints); **this resolver answers where each preprint was formally published** (venue + CCF rank + BibTeX). Typical flow: search with arXivSearcher → feed the resulting arXiv IDs to this resolver.
+
 ## Setup
 
 ```bash
@@ -61,19 +73,41 @@ Multiple IDs in one invocation share the CCF catalog load and database connectio
 
 ## Agent Skill (Codex / Claude Code / Hermes)
 
-Give your agents direct access to the resolver by installing the bundled skill:
+Give your agents direct access to the resolver by installing the bundled skill. Two install paths:
+
+### Option A — via [skills-manager](https://github.com/xingkongliang/skills-manager) (recommended if you already use it)
+
+[Skills Manager](https://skillsmanager.dev) is a desktop app + CLI that manages one central skill library (`~/.skills-manager`) and deploys to 50+ coding agents, preserving source metadata, presets, and update tracking. If your machine already manages skills through it, install into the central library instead of copying by hand:
+
+```bash
+SM=~/.skills-manager/bin/skills-manager-cli
+"$SM" skills install /path/to/arxiv-venue-resolver/skills/arxiv-venue-resolver   # from a local clone
+# or from GitHub once published:
+"$SM" skills install https://github.com/zephyrq-z/arxiv-venue-resolver/tree/main/skills/arxiv-venue-resolver
+"$SM" skills deploy arxiv-venue-resolver --agent claude_code --agent codex --agent hermes
+```
+
+`skills deploy` copies from the central library into each agent's skills directory; agents then see the `arxiv-venue-resolver` skill. Deployed copies have no baked repo path (Skills Manager does the copying, not `install_skills.py`), so set one env var so the wrapper can find `resolve.py`:
+
+```bash
+export ARXIV_VENUE_RESOLVER_SKM=/path/to/arxiv-venue-resolver/resolve.py
+```
+
+### Option B — direct install
 
 ```bash
 python3 install_skills.py
 ```
 
-Auto-detects and installs to `~/.codex/skills`, `~/.claude/skills`, `~/.hermes/skills` (existing directories only; pass `--dest DIR` for custom locations, `--link` for a dev symlink). Agents then invoke it as the `arxiv-venue-resolver` skill:
+Auto-detects and installs to `~/.codex/skills`, `~/.claude/skills`, `~/.hermes/skills` (existing directories only; pass `--dest DIR` for custom locations, `--link` for a dev symlink). This path bakes the repo location into each copy, so nothing further is needed while the repo stays where it is.
+
+### Either way, agents call
 
 ```bash
-python3 scripts/resolve_venue.py 2407.01489 --json   # from inside the skill
+python3 scripts/resolve_venue.py 2407.01489 --json   # from inside the installed skill
 ```
 
-The skill wraps `resolve.py` with structured JSON errors (`resolver_missing`, `resolver_timeout`, …) so agents can react instead of parsing tracebacks. `resolve.py` itself is not copied with the skill — the wrapper locates it via `--resolver PATH`, the `ARXIV_VENUE_RESOLVER` env var, or the repo path baked in at install time. Keep the repo on disk (or export `ARXIV_VENUE_RESOLVER`) after installing.
+The skill wraps `resolve.py` with structured JSON errors (`resolver_missing`, `resolver_timeout`, …) so agents can react instead of parsing tracebacks. `resolve.py` itself is never copied with the skill — the wrapper locates it in order: `--resolver PATH` argument, `ARXIV_VENUE_RESOLVER` env var, baked install-time repo path (Option B), `ARXIV_VENUE_RESOLVER_SKM` env var (Option A). Keep the repo on disk, or export one of the env vars, after installing.
 
 ## Files
 

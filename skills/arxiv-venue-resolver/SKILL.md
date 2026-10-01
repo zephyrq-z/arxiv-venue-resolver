@@ -60,3 +60,9 @@ JSON output (one object per ID) — use these when answering:
 - `python3 scripts/resolve_venue.py 2501.12548 0704.0001 --json` — batch resolve
 - `python3 scripts/resolve_venue.py 2502.18273 --dblp on --json` — force DBLP fallback for a fresh paper
 - If the script reports `resolver_missing`, point `--resolver` at a checkout of the arxiv-venue-resolver repo.
+
+
+## Resolver Location
+
+`resolve.py` is never bundled with the skill. The wrapper finds it, in order:
+`--resolver PATH` → `ARXIV_VENUE_RESOLVER` env → baked install-time path (direct install) → `ARXIV_VENUE_RESOLVER_SKM` env (skills-manager install). If the script reports `resolver_missing`, one of those must be provided.
