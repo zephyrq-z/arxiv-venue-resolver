@@ -1,8 +1,8 @@
 # arxiv-venue-resolver
 
-Resolve where an arXiv preprint was **actually published** — the venue, its CCF rank, DOI link, and a ready-to-paste BibTeX. Pure standard library, single-file CLI.
+[中文说明](README.zh-CN.md)
 
-输入一个 arXiv 网址或 ID，回答「这篇预印本正式发表在哪」：会议/期刊名、CCF 分级、DOI 链接、可直接粘贴的 BibTeX。纯标准库实现，单文件 CLI。
+Resolve where an arXiv preprint was **actually published** — the venue, its CCF rank, DOI link, and a ready-to-paste BibTeX. Pure standard library, single-file CLI.
 
 ```text
 $ python3 resolve.py https://arxiv.org/abs/2407.01489
@@ -82,7 +82,7 @@ Give your agents direct access to the resolver by installing the bundled skill. 
 ```bash
 SM=~/.skills-manager/bin/skills-manager-cli
 "$SM" skills install /path/to/arxiv-venue-resolver/skills/arxiv-venue-resolver   # from a local clone
-# or from GitHub once published:
+# or from GitHub:
 "$SM" skills install https://github.com/zephyrq-z/arxiv-venue-resolver/tree/main/skills/arxiv-venue-resolver
 "$SM" skills deploy arxiv-venue-resolver --agent claude_code --agent codex --agent hermes
 ```
