@@ -37,7 +37,7 @@ S2 结果缓存在 `~/.cache/arxiv-venue/<id>.json`，含 `resolved:false` 负�
 
 | 组件 | 提供什么 | 缺失时 |
 |---|---|---|
-| [arXivSearcher](https://github.com/zephyrq-z)（伴生项目，本地仓库） | arXiv 元数据 embedding 分片（`data/embedding_shards_*/shard_*.meta.jsonl`）；`build_local.py` 读取后生成 `local.sqlite` | 论文元数据回落 arXiv API（每个未知 ID 一次请求） |
+| [arXivSearcher](https://github.com/aiopsplus/arXivSearcher)（伴生项目） | arXiv 元数据 embedding 分片（`data/embedding_shards_*/shard_*.meta.jsonl`）；`build_local.py` 读取后生成 `local.sqlite` | 论文元数据回落 arXiv API（每个未知 ID 一次请求） |
 | `local.sqlite`（可选，本地构建） | 314 万篇论文元数据：journal_ref / DOI / 分类，毫秒级、零网络 | 失去零请求层（①） |
 | `dblp.sqlite`（可选，本地构建） | 843 万条 DBLP 官方收录记录，权威发表索引 | `--dblp` 回落 DBLP 网络 API（可能撞 bot 防护） |
 

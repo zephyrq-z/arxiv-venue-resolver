@@ -37,7 +37,7 @@ Standalone by design — `resolve.py` runs with zero setup (falls back to the ar
 
 | Component | What it provides | Without it |
 |---|---|---|
-| [arXivSearcher](https://github.com/zephyrq-z) (companion, local repo) | arXiv metadata embedding shards (`data/embedding_shards_*/shard_*.meta.jsonl`); `build_local.py` reads them into `local.sqlite` | paper metadata falls back to the arXiv API (1 request per unknown ID) |
+| [arXivSearcher](https://github.com/aiopsplus/arXivSearcher) (companion) | arXiv metadata embedding shards (`data/embedding_shards_*/shard_*.meta.jsonl`); `build_local.py` reads them into `local.sqlite` | paper metadata falls back to the arXiv API (1 request per unknown ID) |
 | `local.sqlite` (optional, built) | 3.1M-paper metadata: journal_ref / DOI / category at ms-level, zero network | the zero-request tier (①) is lost |
 | `dblp.sqlite` (optional, built) | 8.4M-record authoritative publication index from the DBLP XML dump | `--dblp` falls back to the DBLP web API (may hit bot protection) |
 
