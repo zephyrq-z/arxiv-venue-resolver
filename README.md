@@ -59,10 +59,28 @@ python3 resolve.py <arxiv-url-or-id>... [options]
 
 Multiple IDs in one invocation share the CCF catalog load and database connections.
 
+## Agent Skill (Codex / Claude Code / Hermes)
+
+Give your agents direct access to the resolver by installing the bundled skill:
+
+```bash
+python3 install_skills.py
+```
+
+Auto-detects and installs to `~/.codex/skills`, `~/.claude/skills`, `~/.hermes/skills` (existing directories only; pass `--dest DIR` for custom locations, `--link` for a dev symlink). Agents then invoke it as the `arxiv-venue-resolver` skill:
+
+```bash
+python3 scripts/resolve_venue.py 2407.01489 --json   # from inside the skill
+```
+
+The skill wraps `resolve.py` with structured JSON errors (`resolver_missing`, `resolver_timeout`, …) so agents can react instead of parsing tracebacks. `resolve.py` itself is not copied with the skill — the wrapper locates it via `--resolver PATH`, the `ARXIV_VENUE_RESOLVER` env var, or the repo path baked in at install time. Keep the repo on disk (or export `ARXIV_VENUE_RESOLVER`) after installing.
+
 ## Files
 
 | File | Purpose |
 |---|---|
+| `skills/arxiv-venue-resolver/` | agent skill (SKILL.md + wrapper script) for Codex / Claude Code / Hermes |
+| `install_skills.py` | installs the skill into local agent skill directories |
 | `resolve.py` | the resolver CLI |
 | `build_local.py` | builds `local.sqlite` (3.1M papers) from arXivSearcher embedding shards |
 | `build_dblp.py` | builds `dblp.sqlite` (8.4M records) from the official DBLP XML dump |
