@@ -51,9 +51,12 @@ def s2_keys():
                 keys.append(m.group(2))
     return keys
 
-def s2(path_and_params):
+def s2(path_and_params, _round=0):
+    if _round > 1:   # 两个 key + 匿名共 3 轮尝试后仍 429 → 放弃
+        raise RuntimeError("S2 API 持续 429")
     last = None
-    for key in s2_keys() + [None]:
+    attempts = s2_keys() + [None]
+    for i, key in enumerate(attempts):
         req = urllib.request.Request(
             "https://api.semanticscholar.org/graph/v1" + path_and_params,
             headers={"User-Agent": "arxiv-venue-resolver/1.0"})
@@ -64,7 +67,13 @@ def s2(path_and_params):
         except urllib.error.HTTPError as e:
             last = e
             if e.code in (429, 403):
-                time.sleep(1.5)
+                # ponytail: 只轮换 key 不退避, 同 key 背靠背必撞限流 (S2 限 1 req/s/key)。
+                # 同一 key 重试时指数退避; 全部尝试后仍 429 再睡 30s 整体重试一轮。
+                wait = 2 ** i if key else 1.5
+                time.sleep(wait)
+                if i == len(attempts) - 1:
+                    time.sleep(30)
+                    return s2(path_and_params, _round + 1)
                 continue
             raise
     sys.exit(f"S2 API 不可用（HTTP {last.code}）——需要 key 时设置 env SemanticScholar_API_KEY")
