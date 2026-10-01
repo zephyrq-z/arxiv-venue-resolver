@@ -1,0 +1,13 @@
+# 本地数据库（GB 级，由 build_local.py / build_dblp.py 生成）
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
+
+# DBLP 原始数据（~3GB，可重新下载）
+dblp.xml
+dblp.xml.gz
+
+# Python
+__pycache__/
+*.pyc
+.DS_Store
