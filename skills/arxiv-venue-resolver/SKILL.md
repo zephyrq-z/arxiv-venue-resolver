@@ -27,6 +27,7 @@ No service needs to be running. The resolver works in layers:
 2. arXiv `comments` "Accepted at X" (0 network, author-claimed)
 3. Semantic Scholar (authoritative, cached in `~/.cache/arxiv-venue/`)
 4. DBLP fallback (`--dblp on` or `--dblp only`)
+5. CCF matching: PACM journal wrappers (PACMSE) are disambiguated to the inner conference via the Crossref `issue` field ("FSE"/"ISSTA", cached per DOI); the PACMSE→FSE alias only fires as fallback when that misses
 
 ## Output Fields
 
@@ -59,10 +60,13 @@ JSON output (one object per ID) — use these when answering:
 - 「ccf=null 但 venue 非空」可能是数据事实：先确认该会议真在 CCF 第七版目录里（如 ISIT 就不在，2501.12548 实测）。
 - Rebuild `dblp.sqlite`（`build_dblp.py`）时 XML 用 HTML 命名实体（`&uuml;`）：只替换完整 `&name;` 形式（裸子串 replace 会炸 publ**type**/ti**tle**）；产物必须 `ord()` 转码点；流式块边界截断实体名时留 tail 拼下一块。
 - 迁移/复制 sqlite 后首开可能报 unable to open（WAL 残留）——重跑一次即恢复。
+- **PACMSE（《Proc. ACM Softw. Eng.》）是期刊包裹层**：FSE（2024 起）和 ISSTA（2025 起）的论文都发表在里面，venue 字符串本身分不清是哪个会——resolver 按 DOI 查 Crossref 的 `issue` 字段（缓存为 `xref-*.json`）解出内层会议，venue 仍显示期刊名（BibTeX 按 @article/PACMSE 才是 ACM 官方引用形态）；issue 查不到时才回落 ALIAS 标 FSE。
+- **本地 sqlite（分片构建）不含 comments**：auto 模式下对 journal_ref/comments 双空的本地命中会自动补一次 arXiv API，并把 comments/journal_ref/doi 回写库内（懒回填）——同一篇第二次解析恢复零网络。
 
 ## Examples
 
 - `python3 scripts/resolve_venue.py 2407.01489 --json` — PACMSE paper, resolves to FSE · A
+- `python3 scripts/resolve_venue.py 2502.06193 --json` — ISSTA 2025 paper published in PACMSE: CCF shows **ISSTA · A**（Crossref issue 消歧，不再错标 FSE）
 - `python3 scripts/resolve_venue.py 2501.12548 0704.0001 --json` — batch resolve
 - `python3 scripts/resolve_venue.py 2502.18273 --dblp on --json` — force DBLP fallback for a fresh paper
 - If the script reports `resolver_missing`, point `--resolver` at a checkout of the arxiv-venue-resolver repo.

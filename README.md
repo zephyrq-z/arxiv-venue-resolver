@@ -16,7 +16,7 @@ arXiv:2407.01489  Agentless: Demystifying LLM-based Software Engineering Agents
 
 ## Why
 
-arXiv metadata tells you a paper *exists*, not where it *landed*. Authors fill `journal_ref` inconsistently (~11% of CS papers), arXiv's `comments` field has "Accepted at FSE 2026" buried in free text, and CCF ranks — the de-facto standard for Chinese CS venue evaluation — require mapping a dozen alias forms (PACMSE → FSE, NeurIPS long names) onto the official catalog.
+arXiv metadata tells you a paper *exists*, not where it *landed*. Authors fill `journal_ref` inconsistently (~11% of CS papers), arXiv's `comments` field has "Accepted at FSE 2026" buried in free text, and CCF ranks — the de-facto standard for Chinese CS venue evaluation — require mapping a dozen alias forms (PACMSE wrappers → FSE/ISSTA, NeurIPS long names) onto the official catalog.
 
 This tool chains every evidence source from cheapest to most authoritative, stopping at the first hit:
 
@@ -26,7 +26,8 @@ This tool chains every evidence source from cheapest to most authoritative, stop
 ② Semantic Scholar by-id         (authoritative, cached)
 ③ S2 title search                (for too-new papers)
 ④ DBLP local sqlite / API        (fallback, --dblp on|only)
-⑤ CCF catalog match              (abbr / alias / full name, ambiguity-resolved)
+⑤ PACM wrapper → Crossref issue  (PACMSE hosts both FSE 2024+ and ISSTA 2025+)
+⑥ CCF catalog match              (abbr / alias / full name, ambiguity-resolved)
 ```
 
 S2 results are cached in `~/.cache/arxiv-venue/<id>.json`, including a `resolved:false` negative marker — once confirmed unpublished, re-checking costs zero network.

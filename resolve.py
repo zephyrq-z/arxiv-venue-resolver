@@ -8,7 +8,9 @@
 #   --dblp off         默认关。on = S2 未解析出 venue 时查 DBLP(本地 dblp.sqlite 或网络); only = 跳过 S2 只走 DBLP。
 #   S2 结果缓存到 ~/.cache/arxiv-venue/<id>.json (含 resolved 标记), 重复解析 0 网络。
 # 数据链路: meta(journal_ref/doi, 0请求) → comments 正则提取 "accepted at X" → S2 by-id →
-#           S2 标题搜索 → (DBLP 兜底, 默认关) → 本地 ccf_v7.tsv 匹配
+#           S2 标题搜索 → (DBLP 兜底, 默认关) → PACM 期刊包裹层按 Crossref issue 消歧 → ccf_v7.tsv 匹配
+# 本地库: 分片源不含 comments —— auto 模式下本地命中但 journal_ref/comments 双空时自动补一次
+#         arXiv API, 并把 comments/journal_ref/doi 回写 local.sqlite (懒回填, 之后恢复零请求)
 import argparse, json, os, re, sys, time, urllib.parse, urllib.request
 import xml.etree.ElementTree as ET
 
@@ -27,7 +29,8 @@ def _is_preprint_venue(v):
 # 少数官方名/S2 名与 CCF 目录名对不上的硬映射（norm 后的 venue → CCF abbr），遇到再加
 ALIAS = {
     "advancesinneuralinformationprocessingsystems": "NeurIPS",
-    # PACMSE / FSE 的各种写法（FSE 论文自 2024 起发表在该期刊包裹层里）
+    # PACMSE 期刊包裹层的各种写法 → FSE：仅作 Crossref 消歧未命中时的回落
+    # （vol.1=2024 只有 FSE，vol.2=2025 起 ISSTA 论文也在 PACMSE，正常路径见 PACM_ISSUE_TO_CCF）
     "proceedingsoftheacmonsoftwareengineering": "FSE",
     "pacmse": "FSE", "pacmonsoftwareengineering": "FSE",
     "procacmsoftweng": "FSE", "pacmsoftweng": "FSE",
@@ -38,6 +41,47 @@ OPTS = {"meta_mode": "auto", "dblp": "off", "cache": True}
 
 def norm(s):
     return re.sub(r"[^a-z0-9]+", "", (s or "").lower())
+
+# ACM PACM 期刊包裹层（PACMSE 等）：期刊本身不在 CCF 目录，内层会议由 Crossref works 的
+# issue 字段区分（实测 PACMSE vol.1=2024 FSE → "FSE"，vol.2=2025 FSE 与 ISSTA → "FSE"/"ISSTA"）。
+# 映射命中才覆盖 ALIAS 回落；issue 缺失/未知时保持回落，宁缺勿错标。
+PACM_WRAPPERS = {
+    "proceedingsoftheacmonsoftwareengineering", "pacmse", "pacmonsoftwareengineering",
+    "procacmsoftweng", "pacmsoftweng", "proceedingsoftheacmsoftweng",
+}
+PACM_ISSUE_TO_CCF = {"ISSTA": "ISSTA", "FSE": "FSE"}  # issue 名去 ".N" 子卷后缀再查；遇到再加（PACMPL 同构）
+
+def is_pacm_wrapper(v):
+    return norm(v) in PACM_WRAPPERS
+
+def pacm_conf(doi):
+    """PACM 包裹层 → 内层会议 abbr（Crossref issue 字段，按 DOI 落盘缓存）。失败/未知返回 None。"""
+    if not doi:
+        return None
+    p = os.path.join(CACHE_DIR, "xref-" + doi.replace("/", "_") + ".json")
+    rec = None
+    if OPTS["cache"] and os.path.exists(p):
+        try:
+            with open(p, encoding="utf-8") as f:
+                rec = json.load(f)
+        except (json.JSONDecodeError, OSError):
+            rec = None
+    if rec is None:
+        try:
+            req = urllib.request.Request(
+                "https://api.crossref.org/works/" + urllib.parse.quote(doi, safe=""),
+                headers={"User-Agent": "arxiv-venue-resolver/1.0"})
+            msg = json.load(urllib.request.urlopen(req, timeout=30)).get("message") or {}
+            rec = {"issue": msg.get("issue") or ""}
+        except Exception:
+            return None                      # 网络失败：不缓存，回落 ALIAS（FSE）
+        if OPTS["cache"]:
+            os.makedirs(CACHE_DIR, exist_ok=True)
+            tmp = p + ".tmp"
+            with open(tmp, "w", encoding="utf-8") as f:
+                json.dump(rec, f)
+            os.replace(tmp, p)
+    return PACM_ISSUE_TO_CCF.get(rec.get("issue", "").split(".")[0].strip().upper())
 
 def s2_keys():
     keys = [os.environ.get(k) for k in
@@ -101,27 +145,37 @@ def cache_put(aid, obj):
     os.replace(tmp, p)
 
 _LOCAL_CONN = None
+_LOCAL_COMMENTS_COL = False   # local.sqlite 是否已有 comments 列（旧库首连时懒迁移）
 
 def local_meta(aid):
     """local.sqlite 查一篇；未命中返回 None。"""
-    global _LOCAL_CONN
+    global _LOCAL_CONN, _LOCAL_COMMENTS_COL
     if not os.path.exists(LOCAL_DB):
         if OPTS["meta_mode"] == "local":
             sys.exit(f"本地库不存在: {LOCAL_DB}（先跑 build_local.py）")
         return None
     if _LOCAL_CONN is None:
         import sqlite3
-        _LOCAL_CONN = sqlite3.connect(f"file:{LOCAL_DB}?mode=ro", uri=True)
+        _LOCAL_CONN = sqlite3.connect(LOCAL_DB, timeout=5)
         _LOCAL_CONN.execute("PRAGMA mmap_size=268435456")
+        try:      # 旧库无 comments 列（分片源不含该字段）——懒迁移，便于懒回填
+            _LOCAL_CONN.execute("ALTER TABLE papers ADD COLUMN comments TEXT")
+            _LOCAL_CONN.commit()
+        except sqlite3.OperationalError:
+            pass  # 列已存在，或库只读
+        _LOCAL_COMMENTS_COL = any(r[1] == "comments"
+                                  for r in _LOCAL_CONN.execute("PRAGMA table_info(papers)"))
+    cols = "title, authors, year, categories, journal_ref, doi" + \
+           (", comments" if _LOCAL_COMMENTS_COL else "")
     row = _LOCAL_CONN.execute(
-        "SELECT title, authors, year, categories, journal_ref, doi FROM papers WHERE arxiv_id=?",
-        (aid,)).fetchone()
+        f"SELECT {cols} FROM papers WHERE arxiv_id=?", (aid,)).fetchone()
     if row is None:
         return None
     return {"id": aid, "title": row[0] or "",
             "authors": [a.strip() for a in (row[1] or "").split(",") if a.strip()],
             "year": str(row[2] or ""), "categories": (row[3] or "").split(),
             "journal_ref": row[4] or "", "doi": row[5] or "",
+            "comments": (row[6] or "") if _LOCAL_COMMENTS_COL else "",
             "meta_source": "local sqlite"}
 
 def parse_arxiv_id(s):
@@ -155,11 +209,40 @@ def arxiv_meta(aid):
             "journal_ref": t("journal_ref", "ar"), "doi": t("doi", "ar"),
             "meta_source": "arXiv API"}
 
+def _backfill_local(m):
+    """把 arXiv API 拿到的 comments/journal_ref/doi 回写 local.sqlite（懒回填，失败静默）。"""
+    try:
+        import sqlite3
+        conn = sqlite3.connect(LOCAL_DB, timeout=5)
+        try:
+            try:
+                conn.execute("ALTER TABLE papers ADD COLUMN comments TEXT")
+                conn.commit()
+            except sqlite3.OperationalError:
+                pass  # 列已存在
+            conn.execute("UPDATE papers SET comments=?, journal_ref=?, doi=? WHERE arxiv_id=?",
+                         (m.get("comments") or "", m.get("journal_ref") or "",
+                          m.get("doi") or "", m["id"]))
+            conn.commit()
+        finally:
+            conn.close()
+    except Exception:
+        pass  # 只读盘/锁冲突等一律不影响解析结果
+
 def get_meta(aid):
-    """①本地 sqlite（毫秒级）②arXiv API。local 模式未命中即报错。"""
+    """①本地 sqlite（毫秒级）②arXiv API。local 模式未命中即报错。
+    auto 模式下本地命中但 journal_ref 与 comments 双空时（分片源不含 comments），
+    补一次 arXiv API 取回作者自报信息并回写本地库——comments/journal_ref 层靠它生效。"""
     if OPTS["meta_mode"] != "remote":
         m = local_meta(aid)
         if m is not None:
+            if OPTS["meta_mode"] == "auto" and not m["journal_ref"] and not m.get("comments"):
+                try:
+                    rm = arxiv_meta(aid)
+                except SystemExit:   # arXiv 已无此 id（被撤稿等）：退回本地记录
+                    return m
+                _backfill_local(rm)
+                return rm
             return m
         if OPTS["meta_mode"] == "local":
             sys.exit(f"本地库未收录（可能是快照之后的新论文）: {aid}——用 --meta-mode auto 或 remote")
@@ -228,7 +311,7 @@ COMMENTS_RE = re.compile(
     r"(?:the\s+)?[\w\-&']+(?:\s+[\w\-&']+){0,11}", re.I)
 
 def comments_venue(meta):
-    """从 comments 提取自报 venue 字符串（仅 remote meta 有 comments；本地库未存）。"""
+    """从 comments 提取自报 venue 字符串（remote meta 有 comments；本地库经懒回填后也有）。"""
     c = meta.get("comments") or ""
     if not c:
         return None, None
@@ -346,8 +429,18 @@ def resolve(aid, rows):
             s2_link = s2c.get("s2_link") if not venue else (s2_link if 's2_link' in dir() else s2c.get("s2_link"))
 
     out.update({"venue": venue, "venue_source": source, "venue_type": vtype, "doi": doi})
+    # PACMSE 等 PACM 期刊包裹层：venue 保留期刊名（BibTeX 也按期刊），但 CCF 匹配用
+    # Crossref issue 解出的内层会议（ISSTA 论文不再被回落 ALIAS 错标成 FSE）
+    match_venue = venue
+    if venue and doi and is_pacm_wrapper(venue):
+        conf = pacm_conf(doi)
+        if conf:
+            match_venue = conf
+            if not source or not source.startswith("arXiv"):
+                source = f"{source} + Crossref" if source else "Crossref (issue)"
+                out["venue_source"] = source
     hint = _cs_hint(meta)  # arXiv 分类 → CCF 领域提示，缩写撞名（FSE 双义）时消歧
-    out["ccf"] = (lambda r: r and {"abbr": r["abbr"], "rank": r["rank"], "kind": r["kind"], "area": r["area"]})(ccf_match(venue, rows, hint)) if venue else None
+    out["ccf"] = (lambda r: r and {"abbr": r["abbr"], "rank": r["rank"], "kind": r["kind"], "area": r["area"]})(ccf_match(match_venue, rows, hint)) if venue else None
     if doi:
         out["link"] = f"https://doi.org/{doi}"
     elif venue and "s2_link" in dir():

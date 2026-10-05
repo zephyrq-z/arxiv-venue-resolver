@@ -16,7 +16,7 @@ arXiv:2407.01489  Agentless: Demystifying LLM-based Software Engineering Agents
 
 ## 为什么需要它
 
-arXiv 元数据只告诉你论文**存在**，不告诉你它**落在哪里**。作者填 `journal_ref` 不及时也不完整（CS 论文约 11% 覆盖率），arXiv 的 `comments` 字段把 "Accepted at FSE 2026" 埋在自由文本里，而 CCF 分级——国内计算机学术评价的事实标准——还需要把一堆别名形式（PACMSE → FSE、NeurIPS 各种长名）映射到官方目录上。
+arXiv 元数据只告诉你论文**存在**，不告诉你它**落在哪里**。作者填 `journal_ref` 不及时也不完整（CS 论文约 11% 覆盖率），arXiv 的 `comments` 字段把 "Accepted at FSE 2026" 埋在自由文本里，而 CCF 分级——国内计算机学术评价的事实标准——还需要把一堆别名形式（PACMSE 包裹层 → FSE/ISSTA、NeurIPS 各种长名）映射到官方目录上。
 
 本工具按成本从低到高串起所有证据源，命中即停：
 
@@ -26,7 +26,8 @@ arXiv 元数据只告诉你论文**存在**，不告诉你它**落在哪里**。
 ② Semantic Scholar by-id         (权威, 带缓存)
 ③ S2 标题搜索                    (查太新的论文)
 ④ DBLP 本地 sqlite / 网络 API    (兜底, --dblp on|only)
-⑤ CCF 目录匹配                   (缩写 / 别名 / 全称, 撞名消歧)
+⑤ PACM 包裹层 → Crossref issue   (PACMSE 里包着 FSE 2024+ 和 ISSTA 2025+)
+⑥ CCF 目录匹配                   (缩写 / 别名 / 全称, 撞名消歧)
 ```
 
 S2 结果缓存在 `~/.cache/arxiv-venue/<id>.json`，含 `resolved:false` 负缓存标记——一旦确认未发表，复查零网络成本。
